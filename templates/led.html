@@ -3,92 +3,459 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sterowanie Diodą LED</title>
+    <title>Sterowanie LED</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg:        #0a0c0f;
+            --surface:   #111318;
+            --border:    #1e2330;
+            --green:     #00ff88;
+            --green-dim: #00ff8833;
+            --red:       #ff3355;
+            --red-dim:   #ff335522;
+            --amber:     #ffaa00;
+            --amber-dim: #ffaa0022;
+            --text:      #c8d0e0;
+            --muted:     #4a5568;
+            --mono:      'Share Tech Mono', monospace;
+            --sans:      'Rajdhani', sans-serif;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
-            font-family: 'Inter', 'Segoe UI', sans-serif;
-            background-color: #1a1a2e;
-            color: #fff;
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--sans);
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
-            margin: 0;
+            padding: 2rem 1rem;
+            /* subtle scanline texture */
+            background-image: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(255,255,255,0.012) 2px,
+                rgba(255,255,255,0.012) 4px
+            );
         }
-        .container {
-            background: #16213e;
-            padding: 3rem;
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+
+        /* ── Header ── */
+        header {
             text-align: center;
+            margin-bottom: 2.5rem;
+            animation: fadeDown .6s ease both;
         }
-        h1 {
-            margin-top: 0;
-            color: #0f3460;
-            color: #e94560;
+        header .label {
+            font-family: var(--mono);
+            font-size: .7rem;
+            letter-spacing: .25em;
+            color: var(--muted);
+            text-transform: uppercase;
+            margin-bottom: .4rem;
         }
-        .status {
-            font-size: 1.5rem;
-            margin-bottom: 2rem;
-            padding: 1rem;
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.05);
+        header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: #fff;
         }
-        .status span {
-            font-weight: bold;
+        header h1 span { color: var(--green); }
+
+        /* ── Card ── */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            width: 100%;
+            max-width: 520px;
+            overflow: hidden;
+            animation: fadeUp .5s ease both;
         }
-        .status-on {
-            color: #4CAF50;
-        }
-        .status-off {
-            color: #f44336;
-        }
-        form {
+        .card + .card { margin-top: 1rem; animation-delay: .1s; }
+
+        .card-header {
             display: flex;
-            gap: 1rem;
-            justify-content: center;
+            align-items: center;
+            gap: .6rem;
+            padding: .75rem 1.25rem;
+            border-bottom: 1px solid var(--border);
+            font-family: var(--mono);
+            font-size: .7rem;
+            letter-spacing: .15em;
+            color: var(--muted);
+            text-transform: uppercase;
         }
-        button {
-            border: none;
-            padding: 15px 30px;
-            font-size: 1.2rem;
-            border-radius: 10px;
+        .card-header .dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 6px var(--green);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        .card-header .dot.amber { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+
+        .card-body { padding: 1.5rem 1.25rem; }
+
+        /* ── LED Status ── */
+        .led-visual {
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+        .led-bulb {
+            width: 52px; height: 52px;
+            border-radius: 50%;
+            border: 2px solid var(--border);
+            background: var(--red-dim);
+            box-shadow: inset 0 0 12px var(--red-dim);
+            transition: all .3s ease;
+            flex-shrink: 0;
+        }
+        .led-bulb.on {
+            background: var(--green-dim);
+            border-color: var(--green);
+            box-shadow:
+                inset 0 0 12px var(--green),
+                0 0 20px var(--green),
+                0 0 40px var(--green-dim);
+            animation: glow 1.5s ease-in-out infinite alternate;
+        }
+        .led-info {}
+        .led-info .state-label {
+            font-family: var(--mono);
+            font-size: 1.1rem;
+            color: {% if status == 'Włączona' %}var(--green){% else %}var(--red){% endif %};
+        }
+        .led-info .state-sub {
+            font-size: .8rem;
+            color: var(--muted);
+            margin-top: .2rem;
+        }
+
+        /* ── Buttons ── */
+        .btn-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: .75rem;
+        }
+        .btn {
+            padding: .75rem;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            background: transparent;
+            color: var(--text);
+            font-family: var(--mono);
+            font-size: .8rem;
+            letter-spacing: .1em;
+            text-transform: uppercase;
             cursor: pointer;
-            transition: transform 0.2s, background 0.2s;
-            color: white;
-            font-weight: 600;
+            transition: all .2s ease;
         }
-        button:active {
-            transform: scale(0.95);
-        }
+        .btn:hover { transform: translateY(-1px); }
+        .btn:active { transform: translateY(0); }
         .btn-on {
-            background: #4CAF50;
+            border-color: var(--green);
+            color: var(--green);
         }
         .btn-on:hover {
-            background: #45a049;
+            background: var(--green-dim);
+            box-shadow: 0 0 12px var(--green-dim);
         }
         .btn-off {
-            background: #f44336;
+            border-color: var(--red);
+            color: var(--red);
         }
         .btn-off:hover {
-            background: #d32f2f;
+            background: var(--red-dim);
+            box-shadow: 0 0 12px var(--red-dim);
+        }
+
+        /* ── Morse Section ── */
+        .prompt-area {
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            color: var(--text);
+            font-family: var(--sans);
+            font-size: 1rem;
+            padding: .85rem 1rem;
+            resize: vertical;
+            min-height: 90px;
+            outline: none;
+            transition: border-color .2s;
+        }
+        .prompt-area:focus { border-color: var(--amber); }
+        .prompt-area::placeholder { color: var(--muted); }
+
+        .btn-morse {
+            width: 100%;
+            margin-top: .75rem;
+            padding: .85rem;
+            border: 1px solid var(--amber);
+            border-radius: 3px;
+            background: transparent;
+            color: var(--amber);
+            font-family: var(--mono);
+            font-size: .8rem;
+            letter-spacing: .15em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all .2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: .6rem;
+        }
+        .btn-morse:hover {
+            background: var(--amber-dim);
+            box-shadow: 0 0 14px var(--amber-dim);
+        }
+        .btn-morse:disabled {
+            opacity: .4;
+            cursor: not-allowed;
+            box-shadow: none;
+            background: transparent;
+        }
+
+        /* ── Result box ── */
+        #morse-result {
+            margin-top: 1rem;
+            display: none;
+        }
+        .result-box {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1rem;
+        }
+        .result-box .result-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: .8rem;
+            margin-bottom: .4rem;
+            gap: 1rem;
+        }
+        .result-box .result-row:last-child { margin-bottom: 0; }
+        .result-box .rk {
+            color: var(--muted);
+            font-family: var(--mono);
+            flex-shrink: 0;
+        }
+        .result-box .rv {
+            color: var(--text);
+            font-family: var(--mono);
+            word-break: break-all;
+            text-align: right;
+        }
+        .result-box .rv.morse-code {
+            color: var(--amber);
+            letter-spacing: .08em;
+        }
+        .result-box .rv.success { color: var(--green); }
+        .result-box .rv.error   { color: var(--red); }
+
+        /* morse ticker animation */
+        .morse-ticker {
+            font-family: var(--mono);
+            font-size: .85rem;
+            color: var(--amber);
+            letter-spacing: .12em;
+            margin-top: .75rem;
+            overflow: hidden;
+            white-space: nowrap;
+            border-right: 2px solid var(--amber);
+            width: 0;
+            animation: typing 1.5s steps(40,end) forwards, blink .8s step-end infinite;
+        }
+
+        /* ── Spinner ── */
+        .spinner {
+            width: 14px; height: 14px;
+            border: 2px solid var(--amber-dim);
+            border-top-color: var(--amber);
+            border-radius: 50%;
+            animation: spin .7s linear infinite;
+            display: none;
+        }
+
+        /* ── Animations ── */
+        @keyframes fadeDown {
+            from { opacity: 0; transform: translateY(-16px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes glow {
+            from { box-shadow: inset 0 0 12px var(--green), 0 0 20px var(--green), 0 0 40px var(--green-dim); }
+            to   { box-shadow: inset 0 0 20px var(--green), 0 0 32px var(--green), 0 0 60px var(--green-dim); }
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: .3; }
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        @keyframes typing {
+            to { width: 100%; }
+        }
+        @keyframes blink {
+            50% { border-color: transparent; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Sterowanie LED na Raspberry Pi</h1>
-        
-        <div class="status">
-            Obecny stan diody: <span class="{% if status == 'Włączona' %}status-on{% else %}status-off{% endif %}">{{ status }}</span>
-        </div>
 
-        <form method="POST">
-            {% csrf_token %}
-            <button type="submit" name="action" value="on" class="btn-on">Włącz</button>
-            <button type="submit" name="action" value="off" class="btn-off">Wyłącz</button>
-        </form>
+    <header>
+        <div class="label">Raspberry Pi · GPIO 17</div>
+        <h1>LED <span>Control</span></h1>
+    </header>
+
+    <!-- ── Karta 1: Stan diody + przyciski ── -->
+    <div class="card">
+        <div class="card-header">
+            <div class="dot {% if status != 'Włączona' %}amber{% endif %}"></div>
+            status diody
+        </div>
+        <div class="card-body">
+            <div class="led-visual">
+                <div class="led-bulb {% if status == 'Włączona' %}on{% endif %}" id="led-bulb"></div>
+                <div class="led-info">
+                    <div class="state-label" id="state-label">{{ status }}</div>
+                    <div class="state-sub">PIN 17 · BCM</div>
+                </div>
+            </div>
+
+            <form method="POST" class="btn-row">
+                {% csrf_token %}
+                <button type="submit" name="action" value="on"  class="btn btn-on">▶ Włącz</button>
+                <button type="submit" name="action" value="off" class="btn btn-off">■ Wyłącz</button>
+            </form>
+        </div>
     </div>
+
+    <!-- ── Karta 2: Gemini → Morse ── -->
+    <div class="card" style="animation-delay:.15s">
+        <div class="card-header">
+            <div class="dot amber"></div>
+            Gemini → Morse → LED
+        </div>
+        <div class="card-body">
+
+            <textarea
+                id="prompt-input"
+                class="prompt-area"
+                placeholder="Wpisz pytanie dla Gemini… (np. Ile planet ma Układ Słoneczny?)"
+                maxlength="500"
+            ></textarea>
+
+            <button class="btn-morse" id="morse-btn" onclick="sendMorse()">
+                <div class="spinner" id="spinner"></div>
+                <span id="morse-btn-label">⠿ Wyślij i zagraj w Morse</span>
+            </button>
+
+            <div id="morse-result">
+                <div class="result-box" id="result-box"></div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        async function sendMorse() {
+            const promptInput = document.getElementById('prompt-input');
+            const btn         = document.getElementById('morse-btn');
+            const spinner     = document.getElementById('spinner');
+            const btnLabel    = document.getElementById('morse-btn-label');
+            const resultWrap  = document.getElementById('morse-result');
+            const resultBox   = document.getElementById('result-box');
+
+            const prompt = promptInput.value.trim();
+            if (!prompt) {
+                promptInput.focus();
+                promptInput.style.borderColor = 'var(--red)';
+                setTimeout(() => promptInput.style.borderColor = '', 1000);
+                return;
+            }
+
+            // Loading state
+            btn.disabled    = true;
+            spinner.style.display = 'block';
+            btnLabel.textContent  = 'Wysyłam do Gemini…';
+            resultWrap.style.display = 'none';
+
+            try {
+                const res  = await fetch('/led/morse/', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({ prompt }),
+                });
+                const data = await res.json();
+
+                resultBox.innerHTML = '';
+
+                if (data.success) {
+                    resultBox.innerHTML = `
+                        <div class="result-row">
+                            <span class="rk">status</span>
+                            <span class="rv success">✓ odgrywanie na LED</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="rk">model</span>
+                            <span class="rv">${data.model}</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="rk">morse</span>
+                            <span class="rv morse-code">${data.morse}</span>
+                        </div>
+                    `;
+                    // animowany ticker kodu Morse
+                    const ticker = document.createElement('div');
+                    ticker.className = 'morse-ticker';
+                    ticker.textContent = data.morse;
+                    resultBox.appendChild(ticker);
+                } else {
+                    resultBox.innerHTML = `
+                        <div class="result-row">
+                            <span class="rk">błąd</span>
+                            <span class="rv error">${data.error || 'Nieznany błąd'}</span>
+                        </div>
+                    `;
+                }
+
+                resultWrap.style.display = 'block';
+
+            } catch (err) {
+                resultBox.innerHTML = `
+                    <div class="result-row">
+                        <span class="rk">błąd</span>
+                        <span class="rv error">Brak połączenia z serwerem</span>
+                    </div>
+                `;
+                resultWrap.style.display = 'block';
+            } finally {
+                btn.disabled          = false;
+                spinner.style.display = 'none';
+                btnLabel.textContent  = '⠿ Wyślij i zagraj w Morse';
+            }
+        }
+
+        // Enter w textarea (Ctrl+Enter wysyła)
+        document.getElementById('prompt-input').addEventListener('keydown', e => {
+            if (e.key === 'Enter' && e.ctrlKey) sendMorse();
+        });
+    </script>
+
 </body>
 </html>
