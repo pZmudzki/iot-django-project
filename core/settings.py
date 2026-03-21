@@ -116,3 +116,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# ── Gemini API ────────────────────────────────────────────────────────────
+GEMINI_API_KEY = 'chuj'   # https://aistudio.google.com/app/apikey
+GEMINI_MODEL   = 'gemini-3-flash-preview'
