@@ -1,158 +1,215 @@
-import os
 import json
 import threading
-import warnings
-from django.shortcuts import render
-from django.http import JsonResponse
+from datetime import datetime
+
+from django.shortcuts import render, redirect, get_object_or_404
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
 
+from .led_device import led
 from .morse_service import play_morse_on_led
 from .gemini_service import ask_gemini_for_morse
-
-# ── Inicjalizacja LED (bez zmian względem oryginału) ──────────────────────
-
-try:
-    if os.name == 'nt':  # Windows
-        os.environ['GPIOZERO_PIN_FACTORY'] = 'mock'
-
-    from gpiozero import LED
-    led = LED(17)
-except ImportError:
-    warnings.warn("Nie znaleziono biblioteki gpiozero. Używam atrapy diody LED.")
-
-    class DummyLED:
-        def __init__(self):
-            self._is_lit = False
-        def on(self):
-            self._is_lit = True
-        def off(self):
-            self._is_lit = False
-        def toggle(self):
-            self._is_lit = not self._is_lit
-        @property
-        def is_lit(self):
-            return self._is_lit
-        @property
-        def is_active(self):
-            return self._is_lit
-
-    led = DummyLED()
-except Exception as e:
-    warnings.warn(f"Błąd inicjalizacji GPIO: {e}. Używam atrapy.")
-
-    class DummyLED:
-        def __init__(self):
-            self.is_active = False
-        def on(self):
-            self.is_active = True
-        def off(self):
-            self.is_active = False
-        @property
-        def is_lit(self):
-            return self.is_active
-
-    led = DummyLED()
+from .temperature_service import read_temperature
+from .buzzer_service import alarm_on, alarm_off, is_active as buzzer_active
+from .servo_service import get_state as servo_state, set_angle, start_tracking, stop_tracking
+from .color_service import read_color
+from .models import TemperatureReading, LEDSchedule, BuzzerConfig
+from .pdf_service import generate_pdf
 
 
-# ── Istniejący widok (bez zmian) ──────────────────────────────────────────
+# ── LED Control ───────────────────────────────────────────────────────────────
 
+@login_required
 def led_control(request):
-    if request.method == "POST":
-        action = request.POST.get("action")
-        if action == "on":
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'on':
             led.on()
-        elif action == "off":
+        elif action == 'off':
             led.off()
 
+    status_text = 'Włączona' if led.is_lit else 'Wyłączona'
+    temp, hum   = read_temperature()
+    cfg = BuzzerConfig.objects.first()
+
+    return render(request, 'led.html', {
+        'status':           status_text,
+        'temperature':      temp,
+        'humidity':         hum,
+        'buzzer_threshold': cfg.threshold if cfg else 30.0,
+        'buzzer_enabled':   cfg.enabled   if cfg else True,
+        'buzzer_active':    buzzer_active(),
+    })
+
+
+# ── Temperature API ───────────────────────────────────────────────────────────
+
+@login_required
+def temperature_api(request):
+    qs = list(reversed(list(TemperatureReading.objects.all()[:50])))
+    data = [
+        {'timestamp': r.timestamp.strftime('%H:%M'),
+         'temperature': r.temperature,
+         'humidity': r.humidity}
+        for r in qs
+    ]
+    return JsonResponse({'readings': data, 'latest': data[-1] if data else None})
+
+
+# ── Chart ─────────────────────────────────────────────────────────────────────
+
+@login_required
+def chart_view(request):
+    return render(request, 'chart.html')
+
+
+# ── LED Schedule ──────────────────────────────────────────────────────────────
+
+@login_required
+def schedule_view(request):
+    if request.method == 'POST':
+        name     = request.POST.get('name', '').strip()
+        on_time  = request.POST.get('on_time')
+        off_time = request.POST.get('off_time')
+        days     = ''.join('1' if request.POST.get(f'day_{i}') else '0' for i in range(7))
+
+        if name and on_time and off_time and '1' in days:
+            LEDSchedule.objects.create(
+                name=name, on_time=on_time, off_time=off_time, days=days)
+            messages.success(request, f'Harmonogram „{name}" dodany.')
+        else:
+            messages.error(request, 'Wypełnij wszystkie pola i zaznacz co najmniej jeden dzień.')
+        return redirect('schedule')
+
+    return render(request, 'schedule.html',
+                  {'schedules': LEDSchedule.objects.order_by('on_time')})
+
+
+@login_required
+@require_POST
+def schedule_toggle(request, pk):
+    s = get_object_or_404(LEDSchedule, pk=pk)
+    s.enabled = not s.enabled
+    s.save()
+    return redirect('schedule')
+
+
+@login_required
+@require_POST
+def schedule_delete(request, pk):
+    get_object_or_404(LEDSchedule, pk=pk).delete()
+    return redirect('schedule')
+
+
+# ── Buzzer Config ─────────────────────────────────────────────────────────────
+
+@login_required
+@require_POST
+def buzzer_config(request):
     try:
-        status_text = "Włączona" if getattr(led, 'is_lit', led.is_active) else "Wyłączona"
-    except Exception:
-        status_text = "Brak danych"
+        data      = json.loads(request.body)
+        threshold = float(data.get('threshold', 30.0))
+        enabled   = bool(data.get('enabled', True))
+        cfg, _    = BuzzerConfig.objects.get_or_create(pk=1)
+        cfg.threshold = threshold
+        cfg.enabled   = enabled
+        cfg.save()
+        return JsonResponse({'success': True, 'threshold': threshold, 'enabled': enabled})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
-    context = {'status': status_text}
-    return render(request, 'led.html', context)
+
+# ── Servo ─────────────────────────────────────────────────────────────────────
+
+@login_required
+def servo_view(request):
+    return render(request, 'servo.html', {'servo': servo_state()})
 
 
-# ── Nowy endpoint: Prompt → Gemini → Morse → LED ─────────────────────────
+@login_required
+def servo_api(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            if 'tracking' in data:
+                start_tracking() if data['tracking'] else stop_tracking()
+            elif 'angle' in data:
+                stop_tracking()
+                set_angle(float(data['angle']))
+            return JsonResponse({'success': True, **servo_state()})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    return JsonResponse(servo_state())
+
+
+# ── Color Sensor ──────────────────────────────────────────────────────────────
+
+@login_required
+def color_view(request):
+    return render(request, 'color.html')
+
+
+@login_required
+def color_api(request):
+    return JsonResponse(read_color())
+
+
+# ── PDF Report ────────────────────────────────────────────────────────────────
+
+@login_required
+def pdf_report(request):
+    readings = list(TemperatureReading.objects.all()[:200])
+    buf      = generate_pdf(readings)
+    ts       = datetime.now().strftime('%Y%m%d_%H%M')
+    resp     = HttpResponse(buf, content_type='application/pdf')
+    resp['Content-Disposition'] = f'attachment; filename="raport_{ts}.pdf"'
+    return resp
+
+
+# ── Morse / Gemini ────────────────────────────────────────────────────────────
 
 @csrf_exempt
 @require_POST
 def morse_prompt(request):
-    """
-    POST /led/morse/
-
-    Payload (JSON):
-        { "prompt": "Ile planet ma Uklad Sloneczny?" }
-    """
-    # 1. Parsuj JSON z obsługą różnych enkodowań.
-    #    PowerShell na Windows wysyła domyślnie CP1250 zamiast UTF-8.
-    raw_body = request.body
     body = None
-    for encoding in ("utf-8", "cp1250", "latin-1"):
+    for enc in ('utf-8', 'cp1250', 'latin-1'):
         try:
-            body = json.loads(raw_body.decode(encoding))
+            body = json.loads(request.body.decode(enc))
             break
         except (UnicodeDecodeError, json.JSONDecodeError):
             continue
 
     if body is None:
-        return JsonResponse(
-            {"success": False, "error": "Nieprawidlowy JSON lub nieobslugiwane enkodowanie."},
-            status=400,
-        )
+        return JsonResponse({'success': False, 'error': 'Nieprawidłowy JSON.'}, status=400)
 
-    prompt = body.get("prompt", "").strip()
-
+    prompt = body.get('prompt', '').strip()
     if not prompt:
-        return JsonResponse(
-            {"success": False, "error": "Pole 'prompt' jest wymagane i nie moze byc puste."},
-            status=400,
-        )
-
+        return JsonResponse({'success': False, 'error': "Pole 'prompt' jest wymagane."}, status=400)
     if len(prompt) > 500:
-        return JsonResponse(
-            {"success": False, "error": "Prompt nie moze przekraczac 500 znakow."},
-            status=400,
-        )
+        return JsonResponse({'success': False, 'error': 'Prompt max 500 znaków.'}, status=400)
 
-    # 2. Zapytaj Gemini
     try:
         result = ask_gemini_for_morse(prompt)
     except ValueError as e:
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
     except Exception as e:
-        return JsonResponse(
-            {"success": False, "error": f"Blad Gemini API: {str(e)}"},
-            status=502,
-        )
+        return JsonResponse({'success': False, 'error': f'Błąd Gemini: {e}'}, status=502)
 
-    morse_string = result["morse"]
-
+    morse_string = result['morse']
     if not morse_string:
-        return JsonResponse(
-            {
-                "success": False,
-                "error": "Gemini nie zwrocil poprawnego kodu Morse'a.",
-                "raw_response": result.get("raw_response"),
-            },
-            status=502,
-        )
+        return JsonResponse({'success': False, 'error': 'Brak kodu Morse.',
+                             'raw_response': result.get('raw_response')}, status=502)
 
-    # 3. Odegraj Morse'a na LED w tle (nie blokuj odpowiedzi HTTP)
-    thread = threading.Thread(
-        target=play_morse_on_led,
-        args=(led, morse_string),
-        daemon=True,
-    )
-    thread.start()
+    threading.Thread(target=play_morse_on_led, args=(led, morse_string), daemon=True).start()
 
-    # 4. Zwroc odpowiedz natychmiast
     return JsonResponse({
-        "success":    True,
-        "prompt":     prompt,
-        "morse":      morse_string,
-        "model":      result["model"],
-        "led_status": "playing",
-        "message":    "Kod Morse'a jest odgrywany na diodzie LED.",
+        'success':    True,
+        'prompt':     prompt,
+        'morse':      morse_string,
+        'model':      result['model'],
+        'led_status': 'playing',
+        'message':    'Kod Morse odgrywany na LED.',
     })

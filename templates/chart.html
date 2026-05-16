@@ -1,0 +1,142 @@
+{% extends 'base.html' %}
+{% block title %}Wykres temperatury · IoT Panel{% endblock %}
+
+{% block extra_css %}
+<style>
+    .chart-wrap { position:relative; height:280px; width:100%; }
+    .stats-bar {
+        display:flex; gap:1.5rem; flex-wrap:wrap;
+        margin-top:1rem; font-family:var(--mono); font-size:.75rem;
+    }
+    .stat { display:flex; flex-direction:column; gap:.15rem; }
+    .stat-val { font-size:1.1rem; font-weight:700; color:var(--amber); }
+    .stat-lbl { color:var(--muted); font-size:.65rem; letter-spacing:.1em; text-transform:uppercase; }
+    .refresh-note { font-family:var(--mono); font-size:.65rem; color:var(--muted); margin-top:.6rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<header>
+    <div class="label">Raspberry Pi · DS18B20</div>
+    <h1>Temp <span>Chart</span></h1>
+</header>
+
+<div class="card" style="max-width:720px">
+    <div class="card-header">
+        <div class="dot"></div>
+        historia temperatury · ostatnie 50 pomiarów
+    </div>
+    <div class="card-body">
+        <div class="chart-wrap">
+            <canvas id="tempChart"></canvas>
+        </div>
+        <div class="stats-bar" id="stats-bar"></div>
+        <div class="refresh-note" id="refresh-note">Ładowanie danych…</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const ctx = document.getElementById('tempChart').getContext('2d');
+
+Chart.defaults.color = '#4a5568';
+Chart.defaults.borderColor = '#1e2330';
+
+const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [
+            {
+                label: 'Temperatura (°C)',
+                data: [],
+                borderColor: '#ffaa00',
+                backgroundColor: '#ffaa0015',
+                borderWidth: 2,
+                pointRadius: 2,
+                pointHoverRadius: 5,
+                tension: 0.3,
+                fill: true,
+                yAxisID: 'yTemp',
+            },
+            {
+                label: 'Wilgotność (%)',
+                data: [],
+                borderColor: '#00aaff',
+                backgroundColor: '#00aaff10',
+                borderWidth: 1.5,
+                pointRadius: 1.5,
+                pointHoverRadius: 4,
+                tension: 0.3,
+                fill: false,
+                yAxisID: 'yHum',
+            },
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 400 },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: { labels: { color: '#c8d0e0', font: { family: 'Share Tech Mono', size: 11 } } },
+            tooltip: {
+                backgroundColor: '#111318',
+                borderColor: '#1e2330',
+                borderWidth: 1,
+                titleColor: '#c8d0e0',
+                bodyColor: '#c8d0e0',
+            }
+        },
+        scales: {
+            x: { ticks: { color: '#4a5568', maxTicksLimit: 10 } },
+            yTemp: {
+                type: 'linear', position: 'left',
+                ticks: { color: '#ffaa00', callback: v => v + ' °C' },
+                title: { display: true, text: 'Temperatura', color: '#ffaa00' },
+            },
+            yHum: {
+                type: 'linear', position: 'right',
+                ticks: { color: '#00aaff', callback: v => v + ' %' },
+                title: { display: true, text: 'Wilgotność', color: '#00aaff' },
+                grid: { drawOnChartArea: false },
+            }
+        }
+    }
+});
+
+function updateStats(readings) {
+    if (!readings.length) return;
+    const temps = readings.map(r => r.temperature).filter(t => t != null);
+    const hums  = readings.map(r => r.humidity).filter(h => h != null);
+    const avg   = arr => (arr.reduce((a,b) => a+b, 0) / arr.length).toFixed(1);
+    document.getElementById('stats-bar').innerHTML = `
+        <div class="stat"><div class="stat-val">${Math.min(...temps).toFixed(1)} °C</div><div class="stat-lbl">Min</div></div>
+        <div class="stat"><div class="stat-val">${Math.max(...temps).toFixed(1)} °C</div><div class="stat-lbl">Max</div></div>
+        <div class="stat"><div class="stat-val">${avg(temps)} °C</div><div class="stat-lbl">Średnia</div></div>
+        ${hums.length ? `<div class="stat"><div class="stat-val" style="color:var(--blue)">${avg(hums)} %</div><div class="stat-lbl">Wilg. śr.</div></div>` : ''}
+        <div class="stat"><div class="stat-val" style="color:var(--muted)">${readings.length}</div><div class="stat-lbl">Pomiarów</div></div>
+    `;
+}
+
+async function load() {
+    try {
+        const d = await fetch('{% url "temperature_api" %}').then(r => r.json());
+        chart.data.labels             = d.readings.map(r => r.timestamp);
+        chart.data.datasets[0].data   = d.readings.map(r => r.temperature);
+        chart.data.datasets[1].data   = d.readings.map(r => r.humidity);
+        chart.update();
+        updateStats(d.readings);
+        document.getElementById('refresh-note').textContent =
+            'Ostatnia aktualizacja: ' + new Date().toLocaleTimeString('pl-PL') + ' · odświeżanie co 30 s';
+    } catch {
+        document.getElementById('refresh-note').textContent = 'Błąd ładowania danych.';
+    }
+}
+
+load();
+setInterval(load, 30000);
+</script>
+{% endblock %}

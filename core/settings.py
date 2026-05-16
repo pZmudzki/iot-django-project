@@ -120,3 +120,7 @@ STATIC_URL = 'static/'
 # ── Gemini API ────────────────────────────────────────────────────────────
 GEMINI_API_KEY = 'chuj'   # https://aistudio.google.com/app/apikey
 GEMINI_MODEL   = 'gemini-3-flash-preview'
+
+# ── Auth ──────────────────────────────────────────────────────────────────
+LOGIN_URL          = '/accounts/login/'
+LOGIN_REDIRECT_URL = '/led/'

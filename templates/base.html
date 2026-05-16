@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}IoT Panel{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:        #0a0c0f;
+            --surface:   #111318;
+            --border:    #1e2330;
+            --green:     #00ff88;
+            --green-dim: #00ff8833;
+            --red:       #ff3355;
+            --red-dim:   #ff335522;
+            --amber:     #ffaa00;
+            --amber-dim: #ffaa0022;
+            --blue:      #00aaff;
+            --blue-dim:  #00aaff22;
+            --text:      #c8d0e0;
+            --muted:     #4a5568;
+            --mono:      'Share Tech Mono', monospace;
+            --sans:      'Rajdhani', sans-serif;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--sans);
+            min-height: 100vh;
+            background-image: repeating-linear-gradient(
+                0deg, transparent, transparent 2px,
+                rgba(255,255,255,0.012) 2px, rgba(255,255,255,0.012) 4px);
+        }
+
+        /* ── Nav ── */
+        nav {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 50px;
+            position: sticky; top: 0; z-index: 100;
+        }
+        .nav-brand {
+            font-family: var(--mono); font-size: .85rem;
+            color: var(--green); letter-spacing: .15em; text-decoration: none;
+        }
+        .nav-links { display: flex; align-items: center; gap: .15rem; list-style: none; }
+        .nav-links a,
+        .nav-links button {
+            display: block; padding: .3rem .65rem;
+            font-family: var(--mono); font-size: .65rem;
+            letter-spacing: .1em; text-transform: uppercase;
+            text-decoration: none; color: var(--muted);
+            border: 1px solid transparent; border-radius: 3px;
+            background: none; cursor: pointer; transition: all .15s;
+        }
+        .nav-links a:hover, .nav-links button:hover { color: var(--text); border-color: var(--border); }
+        .nav-links a.active { color: var(--green); border-color: var(--border); }
+        .nav-pdf   a      { color: var(--amber) !important; }
+        .nav-logout button { color: var(--red)   !important; }
+
+        /* ── Messages ── */
+        .messages { padding: .5rem 1.5rem 0; }
+        .message {
+            padding: .55rem 1rem; border-radius: 3px; margin-bottom: .4rem;
+            font-size: .8rem; font-family: var(--mono);
+        }
+        .message.success { background: var(--green-dim); border: 1px solid var(--green); color: var(--green); }
+        .message.error   { background: var(--red-dim);   border: 1px solid var(--red);   color: var(--red); }
+
+        /* ── Layout ── */
+        main {
+            display: flex; flex-direction: column;
+            align-items: center; padding: 2rem 1rem;
+        }
+        header {
+            text-align: center; margin-bottom: 2rem;
+            animation: fadeDown .6s ease both;
+        }
+        header .label {
+            font-family: var(--mono); font-size: .7rem;
+            letter-spacing: .25em; color: var(--muted);
+            text-transform: uppercase; margin-bottom: .4rem;
+        }
+        header h1 {
+            font-size: 2rem; font-weight: 700;
+            letter-spacing: .08em; text-transform: uppercase; color: #fff;
+        }
+        header h1 span { color: var(--green); }
+
+        /* ── Card ── */
+        .card {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 4px; width: 100%; max-width: 520px;
+            overflow: hidden; animation: fadeUp .5s ease both;
+        }
+        .card + .card { margin-top: 1rem; animation-delay: .08s; }
+        .card-header {
+            display: flex; align-items: center; gap: .6rem;
+            padding: .7rem 1.25rem; border-bottom: 1px solid var(--border);
+            font-family: var(--mono); font-size: .65rem;
+            letter-spacing: .15em; color: var(--muted); text-transform: uppercase;
+        }
+        .card-header .dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: var(--green); box-shadow: 0 0 6px var(--green);
+            animation: pulse 2s ease-in-out infinite; flex-shrink: 0;
+        }
+        .card-header .dot.amber { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+        .card-header .dot.red   { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+        .card-header .dot.blue  { background: var(--blue);  box-shadow: 0 0 6px var(--blue); }
+        .card-body { padding: 1.4rem 1.25rem; }
+
+        /* ── Buttons ── */
+        .btn {
+            padding: .7rem 1rem; border: 1px solid var(--border);
+            border-radius: 3px; background: transparent; color: var(--text);
+            font-family: var(--mono); font-size: .75rem;
+            letter-spacing: .1em; text-transform: uppercase;
+            cursor: pointer; transition: all .2s ease;
+        }
+        .btn:hover  { transform: translateY(-1px); }
+        .btn:active { transform: translateY(0); }
+        .btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+        .btn-on    { border-color: var(--green); color: var(--green); }
+        .btn-on:hover    { background: var(--green-dim); box-shadow: 0 0 12px var(--green-dim); }
+        .btn-off   { border-color: var(--red);   color: var(--red); }
+        .btn-off:hover   { background: var(--red-dim);   box-shadow: 0 0 12px var(--red-dim); }
+        .btn-amber { border-color: var(--amber); color: var(--amber); }
+        .btn-amber:hover { background: var(--amber-dim); box-shadow: 0 0 14px var(--amber-dim); }
+        .btn-blue  { border-color: var(--blue);  color: var(--blue); }
+        .btn-blue:hover  { background: var(--blue-dim);  box-shadow: 0 0 14px var(--blue-dim); }
+        .btn-full  { width: 100%; display: flex; align-items: center; justify-content: center; gap: .5rem; }
+
+        /* ── Inputs ── */
+        .input {
+            width: 100%; background: var(--bg); border: 1px solid var(--border);
+            border-radius: 3px; color: var(--text);
+            font-family: var(--sans); font-size: .95rem;
+            padding: .6rem 1rem; outline: none; transition: border-color .2s;
+        }
+        .input:focus { border-color: var(--amber); }
+        .input::placeholder { color: var(--muted); }
+
+        /* ── Spinner ── */
+        .spinner {
+            width: 13px; height: 13px;
+            border: 2px solid var(--amber-dim); border-top-color: var(--amber);
+            border-radius: 50%; animation: spin .7s linear infinite; display: none;
+        }
+
+        /* ── Animations ── */
+        @keyframes fadeDown {
+            from { opacity: 0; transform: translateY(-14px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(14px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+        @keyframes spin  { to{transform:rotate(360deg)} }
+        @keyframes glow {
+            from { box-shadow: inset 0 0 12px var(--green), 0 0 20px var(--green), 0 0 40px var(--green-dim); }
+            to   { box-shadow: inset 0 0 20px var(--green), 0 0 32px var(--green), 0 0 60px var(--green-dim); }
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+{% if user.is_authenticated %}
+<nav>
+    <a href="{% url 'led_control' %}" class="nav-brand">◉ IoT Panel</a>
+    <ul class="nav-links">
+        <li><a href="{% url 'led_control' %}"{% if request.resolver_match.url_name == 'led_control' %} class="active"{% endif %}>LED</a></li>
+        <li><a href="{% url 'chart' %}"      {% if request.resolver_match.url_name == 'chart'       %} class="active"{% endif %}>Wykres</a></li>
+        <li><a href="{% url 'schedule' %}"   {% if request.resolver_match.url_name == 'schedule'    %} class="active"{% endif %}>Harmonogram</a></li>
+        <li><a href="{% url 'color' %}"      {% if request.resolver_match.url_name == 'color'       %} class="active"{% endif %}>Kolor</a></li>
+        <li><a href="{% url 'servo' %}"      {% if request.resolver_match.url_name == 'servo'       %} class="active"{% endif %}>Servo</a></li>
+        <li class="nav-pdf"><a href="{% url 'pdf_report' %}">PDF ↓</a></li>
+        <li class="nav-logout">
+            <form method="post" action="{% url 'logout' %}" style="display:inline">
+                {% csrf_token %}
+                <button type="submit">{{ user.username }} ×</button>
+            </form>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+
+{% if messages %}
+<div class="messages">
+    {% for msg in messages %}
+    <div class="message {{ msg.tags }}">{{ msg }}</div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<main>
+{% block content %}{% endblock %}
+</main>
+
+<script>
+function csrfToken() {
+    const c = document.cookie.split(';').find(x => x.trim().startsWith('csrftoken='));
+    return c ? c.split('=')[1] : '';
+}
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

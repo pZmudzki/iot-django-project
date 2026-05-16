@@ -1,0 +1,193 @@
+{% extends 'base.html' %}
+{% block title %}Serwomotor · IoT Panel{% endblock %}
+
+{% block extra_css %}
+<style>
+    .servo-visual {
+        position:relative; width:160px; height:160px; margin:0 auto 1.5rem;
+    }
+    .servo-arc {
+        fill:none; stroke:var(--border); stroke-width:8;
+    }
+    .servo-needle {
+        stroke:var(--amber); stroke-width:3; stroke-linecap:round;
+        transition:all .15s ease;
+    }
+    .servo-center {
+        fill:var(--surface); stroke:var(--amber); stroke-width:2;
+    }
+    .angle-big {
+        font-family:var(--mono); font-size:2.2rem; font-weight:700;
+        color:var(--amber); text-align:center; letter-spacing:.05em;
+    }
+    .angle-unit { font-size:1rem; color:var(--muted); }
+
+    .slider-row { display:flex; align-items:center; gap:.75rem; margin-top:1rem; }
+    .slider-row label { font-family:var(--mono); font-size:.7rem; color:var(--muted);
+        letter-spacing:.1em; text-transform:uppercase; white-space:nowrap; }
+    input[type=range] {
+        flex:1; accent-color:var(--amber); cursor:pointer; height:4px;
+    }
+
+    .pot-bar-wrap {
+        margin-top:1rem; display:flex; flex-direction:column; gap:.3rem;
+    }
+    .pot-bar-label { font-family:var(--mono); font-size:.7rem; color:var(--muted);
+        letter-spacing:.1em; text-transform:uppercase; }
+    .pot-bar-track {
+        height:6px; background:var(--border); border-radius:3px; overflow:hidden;
+    }
+    .pot-bar-fill {
+        height:100%; background:var(--blue); border-radius:3px;
+        transition:width .15s ease;
+    }
+    .pot-val { font-family:var(--mono); font-size:.75rem; color:var(--blue); text-align:right; }
+
+    .tracking-btn { margin-top:.75rem; }
+    .info-row {
+        display:flex; justify-content:space-between; align-items:center;
+        font-family:var(--mono); font-size:.7rem; color:var(--muted);
+        margin-top:.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<header>
+    <div class="label">Raspberry Pi · GPIO 12 + MCP3008</div>
+    <h1>Servo <span>Control</span></h1>
+</header>
+
+<div class="card">
+    <div class="card-header">
+        <div class="dot blue" id="track-dot"></div>
+        <span id="track-label">serwomotor · potencjometr</span>
+    </div>
+    <div class="card-body">
+
+        <!-- Needle gauge -->
+        <svg class="servo-visual" viewBox="0 0 160 160">
+            <path class="servo-arc" d="M20,130 A70,70 0 0,1 140,130"/>
+            <line class="servo-needle" id="needle"
+                  x1="80" y1="130" x2="80" y2="65"/>
+            <circle class="servo-center" cx="80" cy="130" r="8"/>
+        </svg>
+
+        <div class="angle-big"><span id="angle-val">0</span><span class="angle-unit"> °</span></div>
+
+        <!-- Manual slider -->
+        <div class="slider-row">
+            <label>−90°</label>
+            <input type="range" id="angle-slider" min="-90" max="90" step="1" value="0">
+            <label>+90°</label>
+        </div>
+
+        <!-- Potentiometer bar -->
+        <div class="pot-bar-wrap">
+            <div style="display:flex; justify-content:space-between; align-items:center">
+                <span class="pot-bar-label">Potencjometr</span>
+                <span class="pot-val" id="pot-val">—</span>
+            </div>
+            <div class="pot-bar-track">
+                <div class="pot-bar-fill" id="pot-fill" style="width:50%"></div>
+            </div>
+        </div>
+
+        <!-- Tracking toggle -->
+        <button class="btn btn-blue btn-full tracking-btn" id="track-btn" onclick="toggleTracking()">
+            Włącz śledzenie potencjometru
+        </button>
+
+        <div class="info-row">
+            <span id="track-status">Stan: —</span>
+            <span style="color:var(--muted)">Slider wyłącza śledzenie</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let _tracking = {{ servo.tracking|yesno:"true,false" }};
+let _polling  = null;
+
+const needle    = document.getElementById('needle');
+const angleVal  = document.getElementById('angle-val');
+const slider    = document.getElementById('angle-slider');
+const potFill   = document.getElementById('pot-fill');
+const potVal    = document.getElementById('pot-val');
+const trackBtn  = document.getElementById('track-btn');
+const trackDot  = document.getElementById('track-dot');
+const trackStat = document.getElementById('track-status');
+
+function setNeedle(deg) {
+    // -90° = left, 0° = top, +90° = right; pivot at (80,130)
+    const rad = (deg - 90) * Math.PI / 180;
+    const len = 65;
+    const x2  = 80 + len * Math.cos(rad);
+    const y2  = 130 + len * Math.sin(rad);
+    needle.setAttribute('x2', x2.toFixed(1));
+    needle.setAttribute('y2', y2.toFixed(1));
+}
+
+function updateUI(d) {
+    const angle = d.angle ?? 0;
+    const pot   = d.pot   ?? 0.5;
+    _tracking   = d.tracking ?? false;
+
+    slider.value = angle;
+    angleVal.textContent = angle.toFixed(1);
+    setNeedle(angle);
+
+    potFill.style.width = (pot * 100).toFixed(1) + '%';
+    potVal.textContent  = (pot * 100).toFixed(1) + ' %';
+
+    trackBtn.textContent = _tracking ? 'Wyłącz śledzenie potencjometru' : 'Włącz śledzenie potencjometru';
+    trackBtn.className   = _tracking
+        ? 'btn btn-off btn-full tracking-btn'
+        : 'btn btn-blue btn-full tracking-btn';
+    trackDot.className   = _tracking ? 'dot' : 'dot blue';
+    trackStat.textContent = 'Stan: ' + (_tracking ? 'śledzenie potencjometru' : 'sterowanie ręczne');
+}
+
+async function api(body) {
+    const r = await fetch('{% url "servo_api" %}', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRFToken':csrfToken()},
+        body: JSON.stringify(body),
+    });
+    return r.json();
+}
+
+slider.addEventListener('input', () => {
+    setNeedle(parseFloat(slider.value));
+    angleVal.textContent = parseFloat(slider.value).toFixed(1);
+});
+slider.addEventListener('change', async () => {
+    const d = await api({angle: parseFloat(slider.value)});
+    if (d.success) updateUI(d);
+});
+
+async function toggleTracking() {
+    const d = await api({tracking: !_tracking});
+    if (d.success) updateUI(d);
+}
+
+async function poll() {
+    try {
+        const d = await fetch('{% url "servo_api" %}').then(r => r.json());
+        updateUI(d);
+    } catch {}
+}
+
+// Initial state
+updateUI({
+    angle:    {{ servo.angle }},
+    pot:      {{ servo.pot }},
+    tracking: {{ servo.tracking|yesno:"true,false" }}
+});
+
+// Poll every second when tracking is active
+_polling = setInterval(poll, 1000);
+</script>
+{% endblock %}

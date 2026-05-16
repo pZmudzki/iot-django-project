@@ -1,0 +1,161 @@
+{% extends 'base.html' %}
+{% block title %}Harmonogram LED · IoT Panel{% endblock %}
+
+{% block extra_css %}
+<style>
+    .sched-table { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:.78rem; }
+    .sched-table th {
+        text-align:left; padding:.5rem .75rem;
+        border-bottom:1px solid var(--border); color:var(--muted);
+        font-size:.65rem; letter-spacing:.12em; text-transform:uppercase;
+    }
+    .sched-table td { padding:.55rem .75rem; border-bottom:1px solid var(--border); vertical-align:middle; }
+    .sched-table tr:last-child td { border-bottom:none; }
+    .sched-table tr:hover td { background:rgba(255,255,255,0.02); }
+    .badge {
+        display:inline-block; padding:.15rem .5rem; border-radius:2px;
+        font-size:.65rem; letter-spacing:.1em;
+    }
+    .badge-on  { background:var(--green-dim); color:var(--green); border:1px solid var(--green); }
+    .badge-off { background:var(--red-dim);   color:var(--red);   border:1px solid var(--red); }
+    .days-badge { color:var(--amber); }
+
+    .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:.75rem; }
+    .form-group { display:flex; flex-direction:column; gap:.3rem; }
+    .form-group label {
+        font-family:var(--mono); font-size:.65rem; letter-spacing:.12em;
+        color:var(--muted); text-transform:uppercase;
+    }
+    .form-group input[type=text],
+    .form-group input[type=time] {
+        background:var(--bg); border:1px solid var(--border); border-radius:3px;
+        color:var(--text); font-family:var(--mono); font-size:.85rem;
+        padding:.55rem .75rem; outline:none; transition:border-color .2s;
+    }
+    .form-group input:focus { border-color:var(--amber); }
+    .days-grid {
+        display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.25rem;
+    }
+    .day-check { display:none; }
+    .day-label {
+        padding:.3rem .55rem; border:1px solid var(--border); border-radius:3px;
+        font-family:var(--mono); font-size:.7rem; cursor:pointer;
+        color:var(--muted); transition:all .15s; user-select:none;
+    }
+    .day-check:checked + .day-label {
+        border-color:var(--amber); color:var(--amber); background:var(--amber-dim);
+    }
+    .action-btn {
+        background:none; border:none; cursor:pointer;
+        font-family:var(--mono); font-size:.7rem; padding:.25rem .5rem;
+        border-radius:3px; transition:all .15s;
+    }
+    .action-toggle { color:var(--amber); }
+    .action-toggle:hover { background:var(--amber-dim); }
+    .action-delete { color:var(--red); margin-left:.25rem; }
+    .action-delete:hover { background:var(--red-dim); }
+    .empty-note { font-family:var(--mono); font-size:.8rem; color:var(--muted);
+        text-align:center; padding:1.5rem 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<header>
+    <div class="label">Raspberry Pi · GPIO 17</div>
+    <h1>LED <span>Schedule</span></h1>
+</header>
+
+<!-- ── Formularz dodawania ── -->
+<div class="card">
+    <div class="card-header">
+        <div class="dot amber"></div>
+        nowy harmonogram
+    </div>
+    <div class="card-body">
+        <form method="POST">
+            {% csrf_token %}
+            <div class="form-group" style="margin-bottom:.75rem">
+                <label>Nazwa</label>
+                <input type="text" name="name" placeholder="np. Nocne oświetlenie" required>
+            </div>
+            <div class="form-grid" style="margin-bottom:.75rem">
+                <div class="form-group">
+                    <label>Włącz o</label>
+                    <input type="time" name="on_time" required>
+                </div>
+                <div class="form-group">
+                    <label>Wyłącz o</label>
+                    <input type="time" name="off_time" required>
+                </div>
+            </div>
+            <div class="form-group" style="margin-bottom:1rem">
+                <label>Dni tygodnia</label>
+                <div class="days-grid">
+<input type="checkbox" class="day-check" id="d0" name="day_0"><label class="day-label" for="d0">Pon</label>
+                    <input type="checkbox" class="day-check" id="d1" name="day_1"><label class="day-label" for="d1">Wt</label>
+                    <input type="checkbox" class="day-check" id="d2" name="day_2"><label class="day-label" for="d2">Śr</label>
+                    <input type="checkbox" class="day-check" id="d3" name="day_3"><label class="day-label" for="d3">Czw</label>
+                    <input type="checkbox" class="day-check" id="d4" name="day_4"><label class="day-label" for="d4">Pt</label>
+                    <input type="checkbox" class="day-check" id="d5" name="day_5"><label class="day-label" for="d5">Sob</label>
+                    <input type="checkbox" class="day-check" id="d6" name="day_6"><label class="day-label" for="d6">Nie</label>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-amber btn-full">+ Dodaj harmonogram</button>
+        </form>
+    </div>
+</div>
+
+<!-- ── Lista harmonogramów ── -->
+<div class="card" style="animation-delay:.08s">
+    <div class="card-header">
+        <div class="dot"></div>
+        harmonogramy ({{ schedules|length }})
+    </div>
+    <div class="card-body" style="padding:0">
+        {% if schedules %}
+        <table class="sched-table">
+            <thead>
+                <tr>
+                    <th>Nazwa</th>
+                    <th>Włącz</th>
+                    <th>Wyłącz</th>
+                    <th>Dni</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for s in schedules %}
+            <tr>
+                <td>{{ s.name }}</td>
+                <td>{{ s.on_time|time:"H:i" }}</td>
+                <td>{{ s.off_time|time:"H:i" }}</td>
+                <td class="days-badge">{{ s.days_display }}</td>
+                <td>
+                    <span class="badge {% if s.enabled %}badge-on{% else %}badge-off{% endif %}">
+                        {% if s.enabled %}ON{% else %}OFF{% endif %}
+                    </span>
+                </td>
+                <td>
+                    <form method="POST" action="{% url 'schedule_toggle' s.pk %}" style="display:inline">
+                        {% csrf_token %}
+                        <button type="submit" class="action-btn action-toggle">
+                            {% if s.enabled %}Wyłącz{% else %}Włącz{% endif %}
+                        </button>
+                    </form>
+                    <form method="POST" action="{% url 'schedule_delete' s.pk %}" style="display:inline"
+                          onsubmit="return confirm('Usunąć harmonogram „{{ s.name }}"?')">
+                        {% csrf_token %}
+                        <button type="submit" class="action-btn action-delete">✕</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-note">Brak harmonogramów. Dodaj pierwszy powyżej.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

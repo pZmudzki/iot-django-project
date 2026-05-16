@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}Czujnik koloru · IoT Panel{% endblock %}
+
+{% block extra_css %}
+<style>
+    .color-swatch {
+        width:140px; height:140px; border-radius:50%;
+        border:3px solid var(--border);
+        background:#888;
+        box-shadow:0 0 30px rgba(0,0,0,.5);
+        transition:background .3s, box-shadow .3s;
+        margin:0 auto 1.5rem;
+    }
+    .rgb-grid {
+        display:grid; grid-template-columns:repeat(3,1fr); gap:.75rem;
+        text-align:center;
+    }
+    .rgb-box { display:flex; flex-direction:column; gap:.3rem; }
+    .rgb-val { font-family:var(--mono); font-size:1.6rem; font-weight:700; }
+    .rgb-lbl { font-family:var(--mono); font-size:.65rem; letter-spacing:.15em;
+        text-transform:uppercase; color:var(--muted); }
+    .hex-display {
+        text-align:center; font-family:var(--mono); font-size:1rem;
+        color:var(--text); letter-spacing:.1em; margin-top:1rem;
+    }
+    .sim-badge {
+        display:inline-block; margin-top:.5rem; padding:.2rem .6rem;
+        background:var(--amber-dim); border:1px solid var(--amber);
+        color:var(--amber); font-family:var(--mono); font-size:.65rem;
+        border-radius:3px; letter-spacing:.1em;
+    }
+    .refresh-note { font-family:var(--mono); font-size:.65rem; color:var(--muted);
+        text-align:center; margin-top:.75rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<header>
+    <div class="label">Raspberry Pi · TCS3200</div>
+    <h1>Color <span>Sensor</span></h1>
+</header>
+
+<div class="card">
+    <div class="card-header">
+        <div class="dot blue"></div>
+        Wykrywanie koloru · odświeżanie co 2 s
+    </div>
+    <div class="card-body">
+        <div class="color-swatch" id="swatch"></div>
+        <div class="rgb-grid">
+            <div class="rgb-box">
+                <div class="rgb-val" id="val-r" style="color:#ff5566">—</div>
+                <div class="rgb-lbl">R</div>
+            </div>
+            <div class="rgb-box">
+                <div class="rgb-val" id="val-g" style="color:#00ff88">—</div>
+                <div class="rgb-lbl">G</div>
+            </div>
+            <div class="rgb-box">
+                <div class="rgb-val" id="val-b" style="color:#00aaff">—</div>
+                <div class="rgb-lbl">B</div>
+            </div>
+        </div>
+        <div class="hex-display" id="hex-display">—</div>
+        <div style="text-align:center" id="sim-note"></div>
+        <div class="refresh-note" id="refresh-note">Ładowanie…</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function refresh() {
+    try {
+        const d = await fetch('{% url "color_api" %}').then(r => r.json());
+        const hex = d.hex;
+        document.getElementById('swatch').style.background    = hex;
+        document.getElementById('swatch').style.boxShadow     = `0 0 40px ${hex}88`;
+        document.getElementById('val-r').textContent          = d.r;
+        document.getElementById('val-g').textContent          = d.g;
+        document.getElementById('val-b').textContent          = d.b;
+        document.getElementById('hex-display').textContent    = hex;
+        document.getElementById('hex-display').style.color    = hex;
+        document.getElementById('sim-note').innerHTML         = d.simulated
+            ? '<span class="sim-badge">⚠ dane symulowane</span>' : '';
+        document.getElementById('refresh-note').textContent   =
+            'Ostatni odczyt: ' + new Date().toLocaleTimeString('pl-PL');
+    } catch {
+        document.getElementById('refresh-note').textContent = 'Błąd połączenia.';
+    }
+}
+refresh();
+setInterval(refresh, 2000);
+</script>
+{% endblock %}
