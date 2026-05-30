@@ -30,16 +30,19 @@ except Exception as e:
     logger.warning(f'TCS3200 mock ({e})')
 
 
-def _count_pulses(s2: bool, s3: bool, duration: float = 0.05) -> int:
+def _count_pulses(s2: bool, s3: bool, duration: float = 0.1) -> int:
     import RPi.GPIO as GPIO
     GPIO.output(S2, GPIO.HIGH if s2 else GPIO.LOW)
     GPIO.output(S3, GPIO.HIGH if s3 else GPIO.LOW)
     time.sleep(0.01)
     count = 0
+    last = GPIO.input(OUT)
     end = time.time() + duration
     while time.time() < end:
-        if GPIO.wait_for_edge(OUT, GPIO.FALLING, timeout=10) is not None:
+        cur = GPIO.input(OUT)
+        if last == 1 and cur == 0:  # falling edge via polling
             count += 1
+        last = cur
     return count
 
 
