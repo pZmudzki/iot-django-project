@@ -1,13 +1,12 @@
 """Servo motor (GPIO 12) controlled by MCP3008 potentiometer (CH0)."""
 import os
-import random
 import logging
 import threading
 import time
 
 logger  = logging.getLogger(__name__)
 _lock   = threading.Lock()
-_state  = {'angle': 0.0, 'pot': 0.5, 'tracking': False}
+_state  = {'angle': 0.0, 'pot': 0.0, 'tracking': False}
 _thread = None
 
 
@@ -23,13 +22,7 @@ except Exception as e:
     class _MockServo:
         value = 0.0
     class _MockPot:
-        value     = 0.5
-        _target   = 0.5
-        def _drift(self):
-            if random.random() < 0.04:
-                self._target = random.random()
-            self.value += (self._target - self.value) * 0.08 + random.uniform(-0.005, 0.005)
-            self.value = max(0.0, min(1.0, self.value))
+        value = 0.0
     _servo = _MockServo()
     _pot   = _MockPot()
 
@@ -59,8 +52,6 @@ def start_tracking():
                 if not _state['tracking']:
                     break
             try:
-                if hasattr(_pot, '_drift'):
-                    _pot._drift()
                 pot_val = float(_pot.value)
                 _servo.value = (pot_val * 2.0) - 1.0
                 with _lock:

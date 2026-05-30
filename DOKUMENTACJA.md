@@ -438,3 +438,201 @@ odpowiedź JSON natychmiast (LED gra w tle)
 | `/accounts/login/` | Logowanie |
 | `/accounts/logout/` | Wylogowanie |
 | `/admin/` | Panel administracyjny Django |
+| `/led/roulette/` | Ruletka – wyłączenie Pi po bankructwie |
+
+---
+
+## 6. Ruletka z wyłączeniem Raspberry Pi (`/led/roulette/`)
+
+### 6.1 Opis funkcji
+
+Żartobliwa funkcja: strona z kołem ruletki i saldem 10 000. Gdy saldo spadnie do zera, serwer automatycznie **wyłącza Raspberry Pi** poleceniem `sudo shutdown -h now`.
+
+---
+
+### 6.2 Jak działa
+
+```
+Użytkownik stawia zakład i klika SPIN
+   ↓
+POST /led/roulette/spin/  {bet_type, bet_amount}
+   ↓
+views.roulette_spin():
+   ├── random.randint(0, 36)  ← losowanie serwera
+   ├── oblicz wygraną/przegraną
+   ├── zapisz nowe saldo w request.session
+   └── jeśli saldo <= 0:
+         led.off()
+         threading.Timer(3.0, _shutdown_pi).start()
+   ↓
+JSON z wynikiem → przeglądarka
+   ↓
+animacja koła (canvas, ~4 sekundy) ląduje na wylosowanej liczbie
+   ↓
+jeśli iot_triggered == true:
+   → nakładka GAME OVER (po 0.9 s)
+   → 3 s po odpowiedzi: Pi wyłącza się
+```
+
+**Opóźnienie 3 sekundy** przed shutdown jest celowe — daje czas, żeby odpowiedź HTTP dotarła do przeglądarki i animacja koła zdążyła się skończyć. Bez tego Pi wyłączyłoby się przed odesłaniem JSONa.
+
+---
+
+### 6.3 Rodzaje zakładów
+
+| Typ | Wygrana | Opis |
+|-----|---------|------|
+| Red / Black | 1:1 | 18 liczb każdy kolor |
+| Odd / Even | 1:1 | parzystość (0 przegrywa) |
+| 1–18 / 19–36 | 1:1 | połowa zakresu (0 przegrywa) |
+| Dowolna liczba 0–36 | 35:1 | trafienie konkretnej liczby |
+
+Saldo przechowywane w sesji Django (`request.session['roulette_balance']`). Nie znika po odświeżeniu strony. Przycisk **NEW GAME** resetuje saldo do 10 000 przez `POST /led/roulette/reset/`.
+
+---
+
+### 6.4 Konfiguracja sudoers na Raspberry Pi (wymagane do shutdown)
+
+Bez tego kroku `sudo shutdown` zakończy się błędem i Pi **nie wyłączy się**.
+
+```bash
+sudo visudo
+```
+
+Dodaj na końcu pliku (zastąp `pi` nazwą użytkownika uruchamiającego Django):
+
+```
+pi ALL=(ALL) NOPASSWD: /sbin/shutdown
+```
+
+Sprawdź, który użytkownik uruchamia serwer:
+
+```bash
+ps aux | grep manage.py
+```
+
+Zapis: `Ctrl+X → Y → Enter` (jeśli edytor to nano).
+
+Zweryfikuj działanie ręcznie:
+
+```bash
+sudo shutdown -h +1    # zaplanuj wyłączenie za 1 minutę
+sudo shutdown -c        # anuluj
+```
+
+---
+
+### 6.5 Co się dzieje jeśli polecenie shutdown odpali się na Macu podczas developmentu?
+
+**Nic.** Kod zawiera zabezpieczenie platformowe:
+
+```python
+def _shutdown_pi():
+    import platform, subprocess
+    if platform.system() != 'Linux':
+        return  # nie robi nic na macOS ani Windows
+    subprocess.run(['sudo', 'shutdown', '-h', 'now'], check=False)
+```
+
+`platform.system()` na macOS zwraca `'Darwin'`, na Windows `'Windows'`, na Raspberry Pi `'Linux'`. Funkcja natychmiast kończy działanie bez wywołania żadnego polecenia. Testowanie na laptopie jest w 100% bezpieczne.
+
+> Gdyby zabezpieczenie nie istniało: `sudo shutdown -h now` na macOS **działa** i wyłączyłby Maca. Komenda jest identyczna. Dlatego guard jest obowiązkowy.
+
+---
+
+## 7. Pełna lista kroków – uruchomienie od zera na Raspberry Pi
+
+### Krok 1 — Klonowanie projektu
+
+```bash
+git clone <url-repozytorium> ~/iot-django-project
+cd ~/iot-django-project
+```
+
+### Krok 2 — Włącz interfejsy SPI i 1-Wire
+
+```bash
+sudo raspi-config
+# Interface Options → SPI → Enable
+# Interface Options → 1-Wire → Enable
+sudo reboot
+```
+
+### Krok 3 — Zainstaluj zależności systemowe
+
+```bash
+sudo apt update
+sudo apt install python3-pip python3-dev pigpio -y
+sudo systemctl enable pigpiod
+sudo systemctl start pigpiod
+```
+
+### Krok 4 — Zainstaluj pakiety Python
+
+```bash
+pip3 install -r requirements.txt
+pip3 install RPi.GPIO
+```
+
+### Krok 5 — Skonfiguruj ALLOWED_HOSTS
+
+W `core/settings.py`:
+
+```python
+ALLOWED_HOSTS = ['192.168.1.100', 'raspberrypi.local', 'localhost']
+```
+
+Znajdź IP: `hostname -I`
+
+### Krok 6 — Baza danych i konto użytkownika
+
+```bash
+python3 manage.py migrate
+python3 manage.py createsuperuser
+```
+
+### Krok 7 — (Opcjonalnie) Klucz Gemini API
+
+Jeśli chcesz używać funkcji Morse + Gemini, dodaj do `core/settings.py`:
+
+```python
+GEMINI_API_KEY = 'twój-klucz-z-aistudio.google.com'
+```
+
+### Krok 8 — Sudoers dla funkcji shutdown (ruletka)
+
+```bash
+sudo visudo
+```
+
+Dodaj (zastąp `pi` swoją nazwą użytkownika):
+
+```
+pi ALL=(ALL) NOPASSWD: /sbin/shutdown
+```
+
+### Krok 9 — Uruchom serwer
+
+```bash
+python3 manage.py runserver 0.0.0.0:8000
+```
+
+Otwórz w przeglądarce:
+
+```
+http://<IP-raspberry>:8000
+```
+
+---
+
+## 8. Tabela widoków i co wywołują na GPIO
+
+| Strona | URL | GPIO / efekt |
+|--------|-----|--------------|
+| Panel LED | `/led/` | GPIO 17 (LED on/off) |
+| Wykres | `/led/chart/` | brak (tylko odczyt z bazy) |
+| Harmonogram | `/led/schedule/` | GPIO 17 (według czasu) |
+| Servo | `/led/servo/` | GPIO 12 (PWM) + MCP3008 CH0 |
+| Kolor | `/led/color/` | GPIO 23/22/25/24/27 (TCS3200) |
+| Ruletka | `/led/roulette/` | GPIO 17 (LED off) + **system shutdown** |
+| PDF | `/led/pdf/` | brak |

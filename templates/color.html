@@ -23,13 +23,7 @@
         text-align:center; font-family:var(--mono); font-size:1rem;
         color:var(--text); letter-spacing:.1em; margin-top:1rem;
     }
-    .sim-badge {
-        display:inline-block; margin-top:.5rem; padding:.2rem .6rem;
-        background:var(--amber-dim); border:1px solid var(--amber);
-        color:var(--amber); font-family:var(--mono); font-size:.65rem;
-        border-radius:3px; letter-spacing:.1em;
-    }
-    .refresh-note { font-family:var(--mono); font-size:.65rem; color:var(--muted);
+.refresh-note { font-family:var(--mono); font-size:.65rem; color:var(--muted);
         text-align:center; margin-top:.75rem; }
 </style>
 {% endblock %}
@@ -73,18 +67,28 @@
 async function refresh() {
     try {
         const d = await fetch('{% url "color_api" %}').then(r => r.json());
-        const hex = d.hex;
-        document.getElementById('swatch').style.background    = hex;
-        document.getElementById('swatch').style.boxShadow     = `0 0 40px ${hex}88`;
-        document.getElementById('val-r').textContent          = d.r;
-        document.getElementById('val-g').textContent          = d.g;
-        document.getElementById('val-b').textContent          = d.b;
-        document.getElementById('hex-display').textContent    = hex;
-        document.getElementById('hex-display').style.color    = hex;
-        document.getElementById('sim-note').innerHTML         = d.simulated
-            ? '<span class="sim-badge">⚠ dane symulowane</span>' : '';
-        document.getElementById('refresh-note').textContent   =
-            'Ostatni odczyt: ' + new Date().toLocaleTimeString('pl-PL');
+        if (d.available) {
+            document.getElementById('swatch').style.background = d.hex;
+            document.getElementById('swatch').style.boxShadow  = `0 0 40px ${d.hex}88`;
+            document.getElementById('val-r').textContent       = d.r;
+            document.getElementById('val-g').textContent       = d.g;
+            document.getElementById('val-b').textContent       = d.b;
+            document.getElementById('hex-display').textContent = d.hex;
+            document.getElementById('hex-display').style.color = d.hex;
+            document.getElementById('sim-note').innerHTML      = '';
+            document.getElementById('refresh-note').textContent =
+                'Ostatni odczyt: ' + new Date().toLocaleTimeString('pl-PL');
+        } else {
+            document.getElementById('swatch').style.background = 'var(--surface)';
+            document.getElementById('swatch').style.boxShadow  = 'none';
+            document.getElementById('val-r').textContent       = '—';
+            document.getElementById('val-g').textContent       = '—';
+            document.getElementById('val-b').textContent       = '—';
+            document.getElementById('hex-display').textContent = '—';
+            document.getElementById('hex-display').style.color = 'var(--muted)';
+            document.getElementById('sim-note').innerHTML      = '';
+            document.getElementById('refresh-note').textContent = 'Czujnik niedostępny';
+        }
     } catch {
         document.getElementById('refresh-note').textContent = 'Błąd połączenia.';
     }

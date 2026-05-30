@@ -16,6 +16,10 @@ def _temperature_recorder():
     while True:
         try:
             temp, hum = read_temperature()
+            if temp is None:
+                time.sleep(60)
+                continue
+
             TemperatureReading.objects.create(temperature=temp, humidity=hum)
 
             # Prune to last 5000 readings so the DB stays small
@@ -35,13 +39,13 @@ def _temperature_recorder():
 
 
 def _schedule_checker():
-    from datetime import datetime
+    from django.utils import timezone
     from .models import LEDSchedule
     from .led_device import led
 
     while True:
         try:
-            now       = datetime.now()
+            now       = timezone.localtime()
             weekday   = now.weekday()           # 0=Mon … 6=Sun
             cur_time  = now.time().replace(second=0, microsecond=0)
             schedules = list(LEDSchedule.objects.filter(enabled=True))

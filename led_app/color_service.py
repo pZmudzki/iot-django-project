@@ -1,4 +1,4 @@
-"""Read RGB color from TCS3200 sensor with simulation fallback.
+"""Read RGB color from TCS3200 sensor. Returns available=False if sensor absent.
 
 TCS3200 pin mapping (BCM):
   S0=23, S1=22  – output frequency scaling (set to 20 %)
@@ -6,7 +6,6 @@ TCS3200 pin mapping (BCM):
   OUT=27         – frequency output
 """
 import os
-import random
 import time
 import logging
 
@@ -45,7 +44,9 @@ def _count_pulses(s2: bool, s3: bool, duration: float = 0.05) -> int:
 
 
 def read_color() -> dict:
-    """Return {'r', 'g', 'b', 'hex', 'simulated'}."""
+    """Return {'r', 'g', 'b', 'hex', 'available'}.
+    When sensor is absent all values are None and available is False.
+    """
     if _gpio_available:
         try:
             r_raw = _count_pulses(False, False)
@@ -56,12 +57,8 @@ def read_color() -> dict:
             g = int(min(255, g_raw / total * 765))
             b = int(min(255, b_raw / total * 765))
             return {'r': r, 'g': g, 'b': b,
-                    'hex': f'#{r:02X}{g:02X}{b:02X}', 'simulated': False}
+                    'hex': f'#{r:02X}{g:02X}{b:02X}', 'available': True}
         except Exception as e:
             logger.warning(f'Color read error: {e}')
 
-    r = random.randint(0, 255)
-    g = random.randint(0, 255)
-    b = random.randint(0, 255)
-    return {'r': r, 'g': g, 'b': b,
-            'hex': f'#{r:02X}{g:02X}{b:02X}', 'simulated': True}
+    return {'r': None, 'g': None, 'b': None, 'hex': None, 'available': False}

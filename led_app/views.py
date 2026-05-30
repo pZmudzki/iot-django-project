@@ -1,4 +1,5 @@
 import json
+import random
 import threading
 from datetime import datetime
 
@@ -213,3 +214,91 @@ def morse_prompt(request):
         'led_status': 'playing',
         'message':    'Kod Morse odgrywany na LED.',
     })
+
+
+# ── Roulette ──────────────────────────────────────────────────────────────────
+
+_ROULETTE_RED = {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
+_STARTING_BALANCE = 10_000
+
+
+def _shutdown_pi():
+    import platform, subprocess
+    if platform.system() != 'Linux':
+        return  # Safety: only executes on the Pi, never on a dev Mac/Windows
+    subprocess.run(['sudo', 'shutdown', '-h', 'now'], check=False)
+
+
+@login_required
+def roulette_view(request):
+    if 'roulette_balance' not in request.session:
+        request.session['roulette_balance'] = _STARTING_BALANCE
+    return render(request, 'roulette.html', {
+        'balance': request.session['roulette_balance'],
+    })
+
+
+@login_required
+def roulette_spin(request):
+    if request.method != 'POST':
+        return JsonResponse({'balance': request.session.get('roulette_balance', _STARTING_BALANCE)})
+
+    try:
+        data = json.loads(request.body)
+        bet_type = str(data.get('bet_type', ''))
+        bet_amount = int(data.get('bet_amount', 0))
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return JsonResponse({'success': False, 'error': 'Invalid data'}, status=400)
+
+    balance = request.session.get('roulette_balance', _STARTING_BALANCE)
+
+    if bet_amount <= 0 or bet_amount > balance:
+        return JsonResponse({'success': False, 'error': 'Invalid bet amount'}, status=400)
+
+    result = random.randint(0, 36)
+
+    win_amount = 0
+    if bet_type == 'red' and result in _ROULETTE_RED:
+        win_amount = bet_amount * 2
+    elif bet_type == 'black' and result != 0 and result not in _ROULETTE_RED:
+        win_amount = bet_amount * 2
+    elif bet_type == 'odd' and result != 0 and result % 2 == 1:
+        win_amount = bet_amount * 2
+    elif bet_type == 'even' and result != 0 and result % 2 == 0:
+        win_amount = bet_amount * 2
+    elif bet_type == 'low' and 1 <= result <= 18:
+        win_amount = bet_amount * 2
+    elif bet_type == 'high' and 19 <= result <= 36:
+        win_amount = bet_amount * 2
+    elif bet_type.startswith('num:'):
+        try:
+            if result == int(bet_type.split(':', 1)[1]):
+                win_amount = bet_amount * 36
+        except (ValueError, IndexError):
+            pass
+
+    new_balance = max(0, balance - bet_amount + win_amount)
+    request.session['roulette_balance'] = new_balance
+    request.session.modified = True
+
+    iot_triggered = False
+    if new_balance <= 0:
+        led.off()
+        iot_triggered = True
+        # Delay shutdown so the HTTP response reaches the browser first
+        threading.Timer(3.0, _shutdown_pi).start()
+
+    return JsonResponse({
+        'success': True,
+        'result': result,
+        'win_amount': win_amount,
+        'balance': new_balance,
+        'iot_triggered': iot_triggered,
+    })
+
+
+@login_required
+@require_POST
+def roulette_reset(request):
+    request.session['roulette_balance'] = _STARTING_BALANCE
+    return JsonResponse({'success': True, 'balance': _STARTING_BALANCE})

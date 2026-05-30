@@ -1,0 +1,516 @@
+{% extends "base.html" %}
+{% block title %}Roulette — IoT Panel{% endblock %}
+
+{% block extra_css %}
+<style>
+.roulette-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 560px;
+    gap: 1.2rem;
+}
+
+/* Balance */
+.balance-row {
+    text-align: center;
+}
+.balance-label {
+    font-family: var(--mono);
+    font-size: .62rem;
+    color: var(--muted);
+    letter-spacing: .3em;
+    text-transform: uppercase;
+    margin-bottom: .3rem;
+}
+.balance-val {
+    font-family: var(--mono);
+    font-size: 2.2rem;
+    color: var(--amber);
+    text-shadow: 0 0 18px rgba(255,170,0,.5);
+    letter-spacing: .12em;
+    transition: color .3s;
+}
+.balance-val.flash-win  { color: var(--green); text-shadow: 0 0 20px var(--green); }
+.balance-val.flash-lose { color: var(--red);   text-shadow: 0 0 20px var(--red); }
+
+/* Wheel */
+.wheel-outer {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+#rouletteCanvas {
+    border-radius: 50%;
+    box-shadow: 0 0 0 3px #1e2330, 0 0 50px rgba(0,255,136,.08);
+    display: block;
+}
+.wheel-pointer {
+    position: absolute;
+    top: -2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 9px solid transparent;
+    border-right: 9px solid transparent;
+    border-top: 22px solid var(--amber);
+    filter: drop-shadow(0 0 5px var(--amber));
+    z-index: 5;
+}
+
+/* Result */
+.result-line {
+    font-family: var(--mono);
+    font-size: 1rem;
+    letter-spacing: .12em;
+    min-height: 1.4rem;
+    text-align: center;
+    color: var(--muted);
+    transition: color .3s;
+}
+.bet-hint {
+    font-family: var(--mono);
+    font-size: .65rem;
+    color: var(--muted);
+    letter-spacing: .1em;
+    text-align: center;
+    min-height: 1.1rem;
+}
+
+/* Bet type grid */
+.btype-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: .4rem;
+    width: 100%;
+}
+
+/* Number grid */
+.numgrid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 3px;
+    width: 100%;
+}
+.numgrid .btn {
+    padding: .28rem .1rem;
+    font-size: .62rem;
+    border-radius: 2px;
+}
+.num-red   { border-color: var(--red);   color: var(--red);   }
+.num-black { border-color: #3a3a3a;      color: #888;         }
+.num-green { border-color: var(--green); color: var(--green); }
+
+/* Amount row */
+.amount-row {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    width: 100%;
+    flex-wrap: wrap;
+}
+.preset-row {
+    display: flex;
+    gap: .35rem;
+    flex-wrap: wrap;
+}
+.preset-row .btn {
+    padding: .4rem .55rem;
+    font-size: .65rem;
+}
+
+/* Active bet highlight */
+.bet-active { opacity: 1 !important; box-shadow: 0 0 10px currentColor; }
+.bet-dim    { opacity: 0.38 !important; }
+
+/* Game over overlay */
+.gameover {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.93);
+    z-index: 999;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.4rem;
+}
+.gameover.show { display: flex; }
+.go-title {
+    font-family: var(--mono);
+    font-size: clamp(2rem, 6vw, 3.5rem);
+    color: var(--red);
+    text-shadow: 0 0 30px var(--red), 0 0 60px rgba(255,51,85,.3);
+    letter-spacing: .25em;
+    text-transform: uppercase;
+    animation: goFlicker 1.4s ease-in-out infinite;
+}
+.go-sub {
+    font-family: var(--sans);
+    font-size: 1rem;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.6;
+}
+.iot-badge {
+    font-family: var(--mono);
+    font-size: .72rem;
+    color: var(--red);
+    border: 1px solid var(--red);
+    padding: .45rem 1rem;
+    border-radius: 3px;
+    letter-spacing: .12em;
+    animation: pulse 2s ease-in-out infinite;
+}
+@keyframes goFlicker {
+    0%,100%{opacity:1}
+    47%{opacity:.9}
+    50%{opacity:.4}
+    53%{opacity:.9}
+    80%{opacity:.7}
+    83%{opacity:1}
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<header>
+    <div class="label">CASINO TERMINAL</div>
+    <h1>ROULETTE <span>v1.0</span></h1>
+</header>
+
+<div class="roulette-wrap">
+
+    <!-- Balance -->
+    <div class="balance-row">
+        <div class="balance-label">Balance</div>
+        <div class="balance-val" id="balVal">{{ balance }}</div>
+    </div>
+
+    <!-- Wheel -->
+    <div class="wheel-outer">
+        <div class="wheel-pointer"></div>
+        <canvas id="rouletteCanvas" width="360" height="360"></canvas>
+    </div>
+
+    <!-- Result / hint -->
+    <div class="result-line" id="resultLine">—</div>
+    <div class="bet-hint"   id="betHint">No bet selected</div>
+
+    <!-- Bet type buttons -->
+    <div class="btype-grid">
+        <button class="btn btn-off  btype bet-dim" data-bet="red">Red</button>
+        <button class="btn btype bet-dim" data-bet="black" style="border-color:#444;color:#999">Black</button>
+        <button class="btn btn-on   btype bet-dim" data-bet="num:0">0 / Green</button>
+        <button class="btn btn-blue btype bet-dim" data-bet="odd">Odd</button>
+        <button class="btn btn-blue btype bet-dim" data-bet="even">Even</button>
+        <button class="btn btn-amber btype bet-dim" data-bet="low">1 – 18</button>
+        <button class="btn btn-amber btype bet-dim" data-bet="high">19 – 36</button>
+    </div>
+
+    <!-- Number picker -->
+    <div class="card" style="width:100%">
+        <div class="card-header"><span class="dot blue"></span>Pick a number &nbsp;<span style="color:var(--muted)">35 : 1</span></div>
+        <div class="card-body" style="padding:.7rem">
+            <div class="numgrid" id="numGrid"></div>
+        </div>
+    </div>
+
+    <!-- Bet amount + spin -->
+    <div class="card" style="width:100%">
+        <div class="card-header"><span class="dot amber"></span>Bet amount</div>
+        <div class="card-body">
+            <div class="amount-row" style="margin-bottom:.7rem">
+                <input type="number" class="input" id="betAmt" min="1" value="100" style="width:120px;flex:none">
+                <div class="preset-row">
+                    <button class="btn btn-amber" onclick="setAmt(100)">100</button>
+                    <button class="btn btn-amber" onclick="setAmt(500)">500</button>
+                    <button class="btn btn-amber" onclick="setAmt(1000)">1K</button>
+                    <button class="btn btn-amber" onclick="setAmt(Math.floor(balance/2))">½</button>
+                    <button class="btn btn-amber" onclick="setAmt(balance)">ALL IN</button>
+                </div>
+            </div>
+            <button class="btn btn-on btn-full" id="spinBtn" onclick="doSpin()">
+                <span class="spinner" id="spinnerIcon"></span>
+                SPIN
+            </button>
+        </div>
+    </div>
+
+</div><!-- /roulette-wrap -->
+
+<!-- Game Over Overlay -->
+<div class="gameover" id="gameOver">
+    <div class="go-title">GAME OVER</div>
+    <div class="go-sub">Your balance reached zero.<br>The IoT device has been shut down.</div>
+    <div class="iot-badge">◉ RASPBERRY PI &mdash; LED OFF</div>
+    <button class="btn btn-on" style="padding:.75rem 2.5rem;font-size:.9rem;margin-top:.5rem" onclick="doReset()">NEW GAME</button>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── Data ───────────────────────────────────────────────────────────────────
+const WHEEL_ORDER = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
+const RED_SET = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+const TOTAL = WHEEL_ORDER.length;
+const SECTOR = (2 * Math.PI) / TOTAL;
+
+const BET_LABELS = {
+    red: 'Red  (1:1)', black: 'Black  (1:1)', odd: 'Odd  (1:1)',
+    even: 'Even  (1:1)', low: '1–18  (1:1)', high: '19–36  (1:1)',
+};
+
+let balance   = {{ balance }};
+let angle     = 0;
+let spinning  = false;
+let activeBet = null;
+
+// ── Canvas ─────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('rouletteCanvas');
+const ctx    = canvas.getContext('2d');
+const CX = canvas.width / 2, CY = canvas.height / 2, R = CX - 6;
+
+function sectorColor(n) {
+    if (n === 0)           return '#1a7a40';
+    if (RED_SET.has(n))    return '#8b1a2a';
+    return '#1a1a1a';
+}
+
+function drawWheel(a) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // outer bezel
+    ctx.beginPath();
+    ctx.arc(CX, CY, R + 5, 0, 2*Math.PI);
+    ctx.fillStyle = '#0d0f12';
+    ctx.fill();
+
+    // sectors
+    for (let i = 0; i < TOTAL; i++) {
+        const sA = a + i * SECTOR - Math.PI / 2;
+        const eA = sA + SECTOR;
+        const n  = WHEEL_ORDER[i];
+
+        ctx.beginPath();
+        ctx.moveTo(CX, CY);
+        ctx.arc(CX, CY, R, sA, eA);
+        ctx.closePath();
+        ctx.fillStyle = sectorColor(n);
+        ctx.fill();
+        ctx.strokeStyle = '#0a0c0f';
+        ctx.lineWidth = .8;
+        ctx.stroke();
+
+        // label
+        const midA = sA + SECTOR / 2;
+        const lx   = CX + R * 0.76 * Math.cos(midA);
+        const ly   = CY + R * 0.76 * Math.sin(midA);
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(midA + Math.PI / 2);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 9px "Share Tech Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(n, 0, 0);
+        ctx.restore();
+    }
+
+    // inner hub
+    ctx.beginPath();
+    ctx.arc(CX, CY, R * 0.20, 0, 2*Math.PI);
+    ctx.fillStyle = '#111318';
+    ctx.fill();
+    ctx.strokeStyle = '#1e2330';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // center dot
+    ctx.beginPath();
+    ctx.arc(CX, CY, 4, 0, 2*Math.PI);
+    ctx.fillStyle = '#00ff88';
+    ctx.fill();
+}
+
+drawWheel(0);
+
+// ── Number grid ────────────────────────────────────────────────────────────
+(function buildGrid() {
+    const grid = document.getElementById('numGrid');
+    // 0 spans 2 cols to break symmetry slightly — keep it simple, just add it first
+    for (let n = 0; n <= 36; n++) {
+        const btn = document.createElement('button');
+        const cls = n === 0 ? 'num-green' : RED_SET.has(n) ? 'num-red' : 'num-black';
+        btn.className = `btn ${cls} btype bet-dim`;
+        btn.textContent = n;
+        btn.dataset.bet = `num:${n}`;
+        grid.appendChild(btn);
+    }
+})();
+
+// ── Bet selection ──────────────────────────────────────────────────────────
+document.addEventListener('click', e => {
+    const btn = e.target.closest('.btype');
+    if (!btn) return;
+    selectBet(btn.dataset.bet);
+});
+
+function selectBet(bet) {
+    activeBet = bet;
+    document.querySelectorAll('.btype').forEach(b => {
+        b.classList.toggle('bet-active', b.dataset.bet === bet);
+        b.classList.toggle('bet-dim',    b.dataset.bet !== bet);
+    });
+    const num = bet.startsWith('num:') ? bet.split(':')[1] : null;
+    const label = num !== null
+        ? (num === '0' ? '0 / Green  (35:1)' : `Number ${num}  (35:1)`)
+        : (BET_LABELS[bet] || bet);
+    document.getElementById('betHint').textContent = `Bet: ${label}`;
+    document.getElementById('betHint').style.color = 'var(--amber)';
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function setAmt(v) {
+    document.getElementById('betAmt').value = Math.max(1, Math.min(Math.floor(v), balance));
+}
+
+function updateBalance(newBal) {
+    balance = newBal;
+    document.getElementById('balVal').textContent = newBal.toLocaleString();
+    document.getElementById('betAmt').max = newBal;
+}
+
+function flashBalance(won) {
+    const el = document.getElementById('balVal');
+    el.classList.add(won ? 'flash-win' : 'flash-lose');
+    setTimeout(() => el.classList.remove('flash-win', 'flash-lose'), 900);
+}
+
+// ── Wheel animation ────────────────────────────────────────────────────────
+function animateTo(resultNum, onDone) {
+    const idx = WHEEL_ORDER.indexOf(resultNum);
+
+    // angle that puts sector idx centered under the pointer (top, canvas angle -PI/2)
+    const targetBase = -(idx + 0.5) * SECTOR;
+    const normTarget = ((targetBase % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+    const normCur    = ((angle     % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+
+    let delta = normTarget - normCur;
+    if (delta <= 0) delta += 2*Math.PI;
+
+    const extraSpins = (5 + Math.floor(Math.random() * 4)) * 2 * Math.PI;
+    const start  = angle;
+    const end    = angle + delta + extraSpins;
+    const dur    = 4200;
+    const t0     = performance.now();
+
+    function ease(t) { return 1 - Math.pow(1 - t, 4); }
+
+    (function frame(now) {
+        const t = Math.min((now - t0) / dur, 1);
+        angle = start + (end - start) * ease(t);
+        drawWheel(angle);
+        if (t < 1) requestAnimationFrame(frame);
+        else { angle = end; drawWheel(angle); onDone(); }
+    })(t0);
+}
+
+// ── Spin ───────────────────────────────────────────────────────────────────
+async function doSpin() {
+    if (spinning) return;
+
+    if (!activeBet) {
+        const h = document.getElementById('betHint');
+        h.textContent = 'Select a bet first!';
+        h.style.color = 'var(--red)';
+        setTimeout(() => { h.style.color = 'var(--amber)'; }, 1500);
+        return;
+    }
+
+    const betAmt = parseInt(document.getElementById('betAmt').value, 10);
+    if (!betAmt || betAmt <= 0 || betAmt > balance) {
+        setResult('Invalid bet amount', 'var(--red)');
+        return;
+    }
+
+    spinning = true;
+    document.getElementById('spinBtn').disabled = true;
+    document.getElementById('spinnerIcon').style.display = 'inline-block';
+    setResult('Spinning…', 'var(--muted)');
+
+    let data;
+    try {
+        const res = await fetch('{% url "roulette_spin" %}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+            body: JSON.stringify({ bet_type: activeBet, bet_amount: betAmt }),
+        });
+        data = await res.json();
+    } catch {
+        setResult('Network error', 'var(--red)');
+        resetSpin();
+        return;
+    }
+
+    if (!data.success) {
+        setResult(data.error || 'Error', 'var(--red)');
+        resetSpin();
+        return;
+    }
+
+    animateTo(data.result, () => {
+        resetSpin();
+
+        const net  = data.win_amount - betAmt;
+        const won  = net > 0;
+        const col  = won ? 'var(--green)' : 'var(--red)';
+        const numCol = data.result === 0 ? '#1a7a40'
+                     : RED_SET.has(data.result) ? '#8b1a2a' : '#222';
+
+        setResult(
+            `${data.result}  —  ${won ? '+' : ''}${net.toLocaleString()}  ${won ? 'WIN' : 'LOST'}`,
+            col
+        );
+
+        updateBalance(data.balance);
+        flashBalance(won);
+
+        if (data.iot_triggered) {
+            setTimeout(() => document.getElementById('gameOver').classList.add('show'), 900);
+        }
+    });
+}
+
+function resetSpin() {
+    spinning = false;
+    document.getElementById('spinBtn').disabled = false;
+    document.getElementById('spinnerIcon').style.display = 'none';
+}
+
+function setResult(text, color) {
+    const el = document.getElementById('resultLine');
+    el.textContent = text;
+    el.style.color = color;
+}
+
+// ── Reset ──────────────────────────────────────────────────────────────────
+async function doReset() {
+    const res  = await fetch('{% url "roulette_reset" %}', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken() },
+    });
+    const data = await res.json();
+    if (data.success) {
+        updateBalance(data.balance);
+        document.getElementById('gameOver').classList.remove('show');
+        setResult('—', 'var(--muted)');
+        angle = 0;
+        drawWheel(0);
+    }
+}
+</script>
+{% endblock %}

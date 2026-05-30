@@ -119,10 +119,10 @@
     <div class="card-body">
         <div class="temp-row">
             <div>
-                <div class="temp-big" id="temp-val">{{ temperature }} °C</div>
+                <div class="temp-big" id="temp-val">{% if temperature is not None %}{{ temperature }} °C{% else %}—{% endif %}</div>
                 <div class="temp-sub">temperatura</div>
             </div>
-            {% if humidity %}
+            {% if humidity is not None %}
             <div>
                 <div class="temp-big" id="hum-val" style="font-size:1.6rem">{{ humidity }} %</div>
                 <div class="temp-sub">wilgotność</div>
@@ -192,10 +192,10 @@ async function refreshTemp() {
     try {
         const d = await fetch('{% url "temperature_api" %}').then(r => r.json());
         if (d.latest) {
-            document.getElementById('temp-val').textContent = d.latest.temperature + ' °C';
+            const t = d.latest.temperature;
+            document.getElementById('temp-val').textContent = t != null ? t + ' °C' : '—';
             const hv = document.getElementById('hum-val');
-            if (hv && d.latest.humidity != null)
-                hv.textContent = d.latest.humidity + ' %';
+            if (hv) hv.textContent = d.latest.humidity != null ? d.latest.humidity + ' %' : '—';
             document.getElementById('temp-updated').textContent =
                 'Ostatni odczyt: ' + d.latest.timestamp;
         }

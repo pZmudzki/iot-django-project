@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-peen2p5iu8xxrj*^g2*dofr@bc7+rn#d)a!u&y!shf^9-evw^%
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -119,7 +119,7 @@ STATIC_URL = 'static/'
 
 # ── Gemini API ────────────────────────────────────────────────────────────
 GEMINI_API_KEY = 'chuj'   # https://aistudio.google.com/app/apikey
-GEMINI_MODEL   = 'gemini-3-flash-preview'
+GEMINI_MODEL   = 'gemini-2.5-flash'
 
 # ── Auth ──────────────────────────────────────────────────────────────────
 LOGIN_URL          = '/accounts/login/'

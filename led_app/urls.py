@@ -15,4 +15,7 @@ urlpatterns = [
     path('color/',              views.color_view,     name='color'),
     path('color/api/',          views.color_api,      name='color_api'),
     path('pdf/',                views.pdf_report,     name='pdf_report'),
+    path('roulette/',           views.roulette_view,  name='roulette'),
+    path('roulette/spin/',      views.roulette_spin,  name='roulette_spin'),
+    path('roulette/reset/',     views.roulette_reset, name='roulette_reset'),
 ]

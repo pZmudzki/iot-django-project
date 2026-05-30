@@ -184,6 +184,7 @@
         <li><a href="{% url 'schedule' %}"   {% if request.resolver_match.url_name == 'schedule'    %} class="active"{% endif %}>Harmonogram</a></li>
         <li><a href="{% url 'color' %}"      {% if request.resolver_match.url_name == 'color'       %} class="active"{% endif %}>Kolor</a></li>
         <li><a href="{% url 'servo' %}"      {% if request.resolver_match.url_name == 'servo'       %} class="active"{% endif %}>Servo</a></li>
+        <li><a href="{% url 'roulette' %}"  {% if request.resolver_match.url_name == 'roulette'    %} class="active"{% endif %} style="color:var(--amber)">Roulette</a></li>
         <li class="nav-pdf"><a href="{% url 'pdf_report' %}">PDF ↓</a></li>
         <li class="nav-logout">
             <form method="post" action="{% url 'logout' %}" style="display:inline">
